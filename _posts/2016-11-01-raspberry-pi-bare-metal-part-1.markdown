@@ -51,7 +51,7 @@ So, in order to write the next line, we need to know a few things. As I mentione
 
 Basically, there are two mailboxes and each is a stack in memory than can be read from (popped) and written to (pushed) by the ARM or the GPU. From the ARM we are able to leave a message in the GPU's mailbox, who will then read it and in turn perform some function[^2].
 
-Now, it's not documented anywhere, but after a [bit of research][9] I found that we are able to control the ACT LED using the [property tags][10] channel. A [bit more digging][11] also lead me the base address of the mailboxes, so now we have everything we need to construct and send a message!
+Now, it's not documented anywhere, but after a [bit of research][9] I found that we are able to control the ACT LED using the [property tags][10] channel. A [bit more digging][11] also lead me to the base address of the mailboxes, so now we have everything we need to construct and send a message!
 
 ## Preparing to Send a Message
 
@@ -61,31 +61,29 @@ _start:
   ldr mailbox, =0x3f00b880
 ```
 
-The first line after `_start:` sets up an alias, allowing us to refer to the register `r0` by the much more useful identifier, `mailbox`. Then we load that register with the base address of the mailboxes.
+The first line after `_start:` sets up an alias, allowing us to refer to the register `r0` by the much more useful identifier, `mailbox`. We then load that register with the base address of the mailboxes.
 
 If we [check the documentation][12], we find that to write to a mailbox we have to:
 
 1. Read the status register until the full flag is not set.
 2. Write the data (shifted into the upper 28 bits) combined with the channel (in the lower four bits) to the write register.
 
-So, to continue:
-
 ```Assembly
   wait1$:
     status .req r1
 ```
 
-First of all, we set a label, `wait1$`[^3], as the beginning of our loop, so we know where to come back to. Secondly, we again create an alias `status` for the register `r1`.
+So, first of all we set a label, `wait1$`[^3], as the beginning of our loop, so we know where to come back to. Secondly, we again create an alias named `status` for the register `r1`.
 
-We can see that the [status register][13] for mailbox 0 (the _read_ mailbox) is at an offset of `0x18` from the base address.
+We can see that the [status register][13] for mailbox 0 (the _read_ mailbox) is at an offset of `0x18` from the base address,
 
 ```Assembly
     ldr status, [mailbox, #0x18]
 ```
 
-So here we load the address of the status register into `status` (or `r1`).
+so next we need to load the address of the status register into `status` (or `r1`).
 
-We need to wait until the status register does _not_ have the full flag set, therefore we need to carry out that check next:
+As we saw above, we have to wait until the status register does _not_ have the full flag set, therefore we need to carry out that check next.
 
 ```Assembly
     tst status, #0x80000000
@@ -98,7 +96,9 @@ The `tst` instruction performs an `AND` between the first operand and the second
     bne wait1$
 ```
 
-If the condition flag is `ne`, `bne wait1$` (**b**ranch **n**ot **e**qual) will branch and jump back to the beginning of the loop. It will continue like this until the status register doesn't have the full flag set. Also, before we exit the loop, we remove the alias `status`.
+There is a chance we will exit the loop now, so before we do that, we remove the `status` alias.
+
+`bne` is an instruction that will jump to the specified label if the condition flag is `ne`. Therefore, if the full flag _is_ set, the condition flag will be `ne`, so we will loop back around to the `wait1$` label. It will continue like this until the status register no longer has the full flag set.
 
 ## Constructing a Message
 
@@ -107,7 +107,7 @@ Let's remind ourselves of the process to send a message:
 1. Read the status register until the full flag is not set.
 2. Write the data (shifted into the upper 28 bits) combined with the channel (in the lower four bits) to the write register.
 
-The message we leave for the GPU is 32-bits. The first 28-bits are the address of the data we want the GPU to receive and the last 4-bits are the channel we want to send the data to.
+This means that the message we need to leave for the GPU is 32 bits. The first 28 bits are the address of the data we want the GPU to receive and the last 4 bits are the channel we want to send the data to.
 
 If we combine the information we get from the [property tag interface documentation][14] with the [undocumented information][9] I mentioned earlier, we can construct a message to send to the GPU.
 
@@ -119,9 +119,9 @@ Let's create a new section for our message, above the `.text` section:
 PropertyInfo:
 ```
 
-The `.align 4` instruction tells the assembler to create an address for the following label where the last 4 bits are 0 (this is also called 16-byte aligned). This is necessary so we can use this address in the message we leave in the mailbox.
+The `.align 4` instruction tells the assembler to create an address for the following label that has last 4 bits set to 0 (this is also called 16-byte aligned). This is necessary so we can use this address in the message we leave in the mailbox.
 
-Then we can define our message data:
+Now we can define our message data.
 
 ```Assembly
   .int PropertyInfoEnd - PropertyInfo
@@ -137,7 +137,7 @@ First is the message header, which contains the entire size of the data (which w
   .int 0
 ```
 
-Next comes the tag header. This contains the tag ID, the size of the tag data and the request/response size. I believe the final value is written to by the GPU if it needs to respond with data.
+Next comes the tag header. This contains the tag ID, the size of the tag data and the request/response size. I believe the response size value is written to by the GPU if it needs to respond with data.
 
 ```Assembly
   .int 130
@@ -151,7 +151,7 @@ After the header comes the actual tag data. As we see from the [undocumented sou
 PropertyInfoEnd:
 ```
 
-Finally comes the end tag, letting the GPU the message is over, and the closing label (so we can calculate the message size).
+Finally comes the end tag (`0`), letting the GPU know the message is over, and the closing label (so we can calculate the message size).
 
 ## Sending a Message
 
@@ -170,14 +170,14 @@ Similar to before, we alias `message` to the register `r1` and load it with the 
   .unreq message
 ```
 
-Next we add the channel (`8`) into the last 4 bits of the message, as specified by the documentation, and actually put the message into mailbox 1's write register, which is at offset `0x20` from the base address. As we did previously, we remove the alias `message`.
+Next we add the channel (`8`) into the last 4 bits of the message, as specified by the documentation, and actually put the message into mailbox 1's write register, which is at offset `0x20` from the base address. As we did previously, finally we remove the `message` alias.
 
 ```Assembly
   wait2$:
     b wait2$
 ```
 
-To finish the file, we give the CPU something to do ad infinitum. If we don't the Raspberry Pi will 'crash', which isn't really a problem for us here as there is nothing else to do!
+Although our main task is done, we still need something else to finish the file: we give the CPU something to do ad infinitum. If we don't the Raspberry Pi will 'crash', which isn't really a problem for us here as there is nothing else to do, but it's still good practice.
 
 ## Linking
 
@@ -221,13 +221,15 @@ So finally, we strip the ELF header and generate a binary image:
 arm-none-eabi-objcopy build/kernel.elf -O binary kernel.img 
 ```
 
-## So Close
+## Let There Be Light
 
-Now we finally have the image file we so worked so hard to get, we can test it out on our Raspberry Pi! Simple copy `kernel.img`, along with `bootloader.bin` and `start.elf`, to a bootable SD and pop it in your Raspberry Pi 3.
+Now that we finally have the image file we so worked so hard to get, we can test everything out on our Raspberry Pi! Simple copy `kernel.img`, along with `bootloader.bin` and `start.elf`, to a bootable SD and pop it in your Raspberry Pi 3.
 
-If luck is on your side, hopefully the green ACT LED will shine brightly, letting you know you've achieved the impossible.
+If luck is on your side, hopefully the green ACT LED will shine brightly, letting you know you've succeeded in taking your first steps into the embedded world!
 
 If darkness greats you, try and try again (or download my [source code][7] and see if that works).
+
+I think most embedded "Hello, Worlds" actually make the LED blink as well, but I felt that this post is already long enough. Stick with me and we'll conquer that in part two!
 
 [1]: http://www.cl.cam.ac.uk/projects/raspberrypi/tutorials/os/ok01.html
 [2]: http://www.valvers.com/open-software/raspberry-pi/step01-bare-metal-programming-in-cpt1/
