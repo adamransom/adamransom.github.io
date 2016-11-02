@@ -35,7 +35,7 @@ _The source code (and the final image file) for this post can be found on [GitHu
 
 Firstly, lets create the standard entry point for an assembly file:
 
-```Assembly
+```
 .global _start
 .section .text
 _start:
@@ -55,7 +55,7 @@ Now, it's not documented anywhere, but after a [bit of research][9] I found that
 
 ## Preparing to Send a Message
 
-```Assembly
+```
 _start:
   mailbox .req r0
   ldr mailbox, =0x3f00b880
@@ -68,7 +68,7 @@ If we [check the documentation][12], we find that to write to a mailbox we have 
 1. Read the status register until the full flag is not set.
 2. Write the data (shifted into the upper 28 bits) combined with the channel (in the lower four bits) to the write register.
 
-```Assembly
+```
   wait1$:
     status .req r1
 ```
@@ -77,7 +77,7 @@ So, first of all we set a label, `wait1$`[^3], as the beginning of our loop, so 
 
 We can see that the [status register][13] for mailbox 0 (the _read_ mailbox) is at an offset of `0x18` from the base address,
 
-```Assembly
+```
     ldr status, [mailbox, #0x18]
 ```
 
@@ -85,13 +85,13 @@ so next we need to load the address of the status register into `status` (or `r1
 
 As we saw above, we have to wait until the status register does _not_ have the full flag set, therefore we need to carry out that check next.
 
-```Assembly
+```
     tst status, #0x80000000
 ```
 
 The `tst` instruction performs an `AND` between the first operand and the second. In our case, it performs `status AND 0x80000000` and sets the _condition flag_ based on the result. If `status` contains `0x80000000`, the `AND` result will be non-zero which will cause the condition flag to be `ne (not equal)`.
 
-```Assembly
+```
     .unreq status
     bne wait1$
 ```
@@ -113,7 +113,7 @@ If we combine the information we get from the [property tag interface documentat
 
 Let's create a new section for our message, above the `.text` section:
 
-```Assembly
+```
 .section .data
 .align 4
 PropertyInfo:
@@ -123,7 +123,7 @@ The `.align 4` instruction tells the assembler to create an address for the foll
 
 Now we can define our message data.
 
-```Assembly
+```
   .int PropertyInfoEnd - PropertyInfo
   .int 0
 
@@ -131,7 +131,7 @@ Now we can define our message data.
 
 First is the message header, which contains the entire size of the data (which we calculate by subtracting the address of the closing label from the address of the leading label) and the request code (which is 0).
 
-```Assembly
+```
   .int 0x00038041
   .int 8
   .int 0
@@ -139,14 +139,14 @@ First is the message header, which contains the entire size of the data (which w
 
 Next comes the tag header. This contains the tag ID, the size of the tag data and the request/response size. I believe the response size value is written to by the GPU if it needs to respond with data.
 
-```Assembly
+```
   .int 130
   .int 1
 ```
 
 After the header comes the actual tag data. As we see from the [undocumented source][9], we first include the pin number followed by the pin state.
 
-```Assembly
+```
   .int 0
 PropertyInfoEnd:
 ```
@@ -157,14 +157,14 @@ Finally comes the end tag (`0`), letting the GPU know the message is over, and t
 
 After all that preparation, we are ready to actually deposit the message into the GPU's mailbox.
 
-```Assembly
+```
   message .req r1
   ldr message, =PropertyInfo
 ```
 
 Similar to before, we alias `message` to the register `r1` and load it with the address of our message data.
 
-```Assembly
+```
   add message, #8
   str message, [mailbox, #0x20]
   .unreq message
@@ -172,12 +172,54 @@ Similar to before, we alias `message` to the register `r1` and load it with the 
 
 Next we add the channel (`8`) into the last 4 bits of the message, as specified by the documentation, and actually put the message into mailbox 1's write register, which is at offset `0x20` from the base address. As we did previously, finally we remove the `message` alias.
 
-```Assembly
+```
   wait2$:
     b wait2$
 ```
 
 Although our main task is done, we still need something else to finish the file: we give the CPU something to do ad infinitum. If we don't the Raspberry Pi will 'crash', which isn't really a problem for us here as there is nothing else to do, but it's still good practice.
+
+The final product should look something like this:
+
+```
+.global _start
+
+.section .data
+.align 4
+PropertyInfo:
+  .int PropertyInfoEnd - PropertyInfo
+  .int 0
+
+  .int 0x00038041
+  .int 8
+  .int 0
+
+  .int 130
+  .int 1
+  .int 0
+PropertyInfoEnd:
+
+.section .text
+_start:
+  mailbox .req r0
+  ldr r0, =0x3f00b880
+
+  wait1$:
+    status .req r1
+    ldr status, [mailbox, #0x18]
+    tst status, #0x80000000
+    .unreq status
+    bne wait1$
+
+  message .req r1
+  ldr message, =PropertyInfo
+  add message, #8
+  str message, [mailbox, #0x20]
+  .unreq message
+
+  wait2$:
+    b wait2$
+```
 
 ## Linking
 
