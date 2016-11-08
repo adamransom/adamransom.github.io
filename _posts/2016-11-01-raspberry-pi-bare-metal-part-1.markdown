@@ -173,8 +173,8 @@ Similar to before, we alias `message` to the register `r1` and load it with the 
 Next we add the channel (`8`) into the last 4 bits of the message, as specified by the documentation, and actually put the message into mailbox 1's write register, which is at offset `0x20` from the base address. As we did previously, finally we remove the `message` alias.
 
 ```
-  wait2$:
-    b wait2$
+  hang:
+    b hang
 ```
 
 Although our main task is done, we still need something else to finish the file: we give the CPU something to do ad infinitum. If we don't the Raspberry Pi will 'crash', which isn't really a problem for us here as there is nothing else to do, but it's still good practice.
@@ -202,7 +202,7 @@ PropertyInfoEnd:
 .section .text
 _start:
   mailbox .req r0
-  ldr r0, =0x3f00b880
+  ldr mailbox, =0x3f00b880
 
   wait1$:
     status .req r1
@@ -217,8 +217,8 @@ _start:
   str message, [mailbox, #0x20]
   .unreq message
 
-  wait2$:
-    b wait2$
+  hang:
+    b hang
 ```
 
 ## Linking
@@ -279,7 +279,7 @@ I think most embedded "Hello, Worlds" actually make the LED blink as well, but I
 [4]: https://github.com/raspberrypi/linux/issues/1332#issuecomment-194353863
 [5]: https://launchpad.net/gcc-arm-embedded/+download
 [6]: https://github.com/raspberrypi/firmware/tree/master/boot
-[7]: https://github.com/adamransom/barely_os/releases/tag/bare-metal-1
+[7]: https://github.com/adamransom/bare_metal/tree/master/led01
 [8]: https://github.com/raspberrypi/firmware/wiki/Mailboxes
 [9]: https://www.raspberrypi.org/forums/viewtopic.php?f=43&t=109137&start=100#p989907
 [10]: https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
