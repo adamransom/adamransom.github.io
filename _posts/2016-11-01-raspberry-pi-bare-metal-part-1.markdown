@@ -17,13 +17,13 @@ The virtual GPIO is controlled by the VideoCore GPU, so we will attempt to turn 
 
 First things first, you will need the [arm-none-eabi toolchain][5] in order to assemble and generate the final image file.
 
-After that, you'll need the [Raspberry Pi boot files][6]. You only need `bootloader.bin` and `start.elf`. We will generate `kernel.img` ourselves and put all 3 files on a bootable SD card.[^1]
+After that, you'll need the [Raspberry Pi boot files][6]. You only need `bootcode.bin` and `start.elf`. We will generate `kernel.img` ourselves and put all 3 files on a bootable SD card.[^1]
 
 When the Raspberry Pi boots, the process looks roughly like this:
 
 1. The Raspberry Pi powers on and at this point the ARM CPU is **off** and the GPU is **on**.
 2. The GPU runs the first bootloader, which is held in ROM on the SoC (System on Chip). This is similar to the BIOS in conventional PCs.
-3. This bootloader reads the SD card and loads the second bootloader from `bootloader.bin`.
+3. This bootloader reads the SD card and loads the second bootloader from `bootcode.bin`.
 4. The second bootloader then reads the GPU firmware, also from the SD card, named `start.elf`.
 5. Finally, and most importantly for us, `start.elf` reads `kernel.img` and allows the ARM CPU to execute it.
 
@@ -75,10 +75,10 @@ If we [check the documentation][12], we find that to write to a mailbox we have 
 
 So, first of all we set a label, `wait1$`[^3], as the beginning of our loop, so we know where to come back to. Secondly, we again create an alias named `status` for the register `r1`.
 
-We can see that the [status register][13] for mailbox 0 (the _read_ mailbox) is at an offset of `0x18` from the base address,
+We can see that the [status register][13] for mailbox 1 (the _write_ mailbox) is at an offset of `0x38` from the base address,
 
 ```
-    ldr status, [mailbox, #0x18]
+    ldr status, [mailbox, #0x38]
 ```
 
 so next we need to load the address of the status register into `status` (or `r1`).
@@ -206,7 +206,7 @@ _start:
 
   wait1$:
     status .req r1
-    ldr status, [mailbox, #0x18]
+    ldr status, [mailbox, #0x38]
     tst status, #0x80000000
     .unreq status
     bne wait1$
@@ -265,7 +265,7 @@ arm-none-eabi-objcopy build/kernel.elf -O binary kernel.img
 
 ## Let There Be Light
 
-Now that we finally have the image file we so worked so hard to get, we can test everything out on our Raspberry Pi! Simple copy `kernel.img`, along with `bootloader.bin` and `start.elf`, to a bootable SD and pop it in your Raspberry Pi 3.
+Now that we finally have the image file we so worked so hard to get, we can test everything out on our Raspberry Pi! Simple copy `kernel.img`, along with `bootcode.bin` and `start.elf`, to a bootable SD and pop it in your Raspberry Pi 3.
 
 If luck is on your side, hopefully the green ACT LED will shine brightly, letting you know you've succeeded in taking your first steps into the embedded world!
 
@@ -290,6 +290,6 @@ I think most embedded "Hello, Worlds" actually make the LED blink as well, but I
 
 ---
 
-[^1]: `bootloader.bin` and `start.elf` are both closed-source and provided pre-compiled by Broadcom.
+[^1]: `bootcode.bin` and `start.elf` are both closed-source and provided pre-compiled by Broadcom.
 [^2]: The GPU can also leave messages in the ARM's mailbox, but we won't be using that feature this time.
 [^3]: Appending a `$` to a label is a common convention letting readers know the label is only relevant for the current scope and not important to the program as a whole.
